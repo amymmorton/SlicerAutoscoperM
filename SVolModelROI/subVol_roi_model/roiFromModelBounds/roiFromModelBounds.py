@@ -15,6 +15,7 @@ from slicer.parameterNodeWrapper import (
 )
 
 from slicer import vtkMRMLScalarVolumeNode
+from slicer import vtkMRMLModelNode
 
 
 #
@@ -110,14 +111,15 @@ class roiFromModelBoundsParameterNode:
     """
     The parameters needed by module.
 
-    inputVolume - The volume to threshold.
+    inputModel- The vtk poly model to compute bounds.
     imageThreshold - The value at which to threshold the input volume.
     invertThreshold - If true, will invert the threshold.
     thresholdedVolume - The output volume that will contain the thresholded volume.
     invertedVolume - The output volume that will contain the inverted thresholded volume.
     """
 
-    inputVolume: vtkMRMLScalarVolumeNode
+    inputModel: vtkMRMLModelNode
+    modelBounds:   list = [0.0,0.0,0.0,0.0,0.0,0.0]
     imageThreshold: Annotated[float, WithinRange(-100, 500)] = 100
     invertThreshold: bool = False
     thresholdedVolume: vtkMRMLScalarVolumeNode
@@ -169,6 +171,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         # Buttons
         self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
+        self.ui.showBounds_pb.connect("clicked(bool)", self.onShowModelBoundsButton)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -209,10 +212,10 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.setParameterNode(self.logic.getParameterNode())
 
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        if not self._parameterNode.inputVolume:
-            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-            if firstVolumeNode:
-                self._parameterNode.inputVolume = firstVolumeNode
+        if not self._parameterNode.inputModel:
+            firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLModelNode")
+            if firstModelNode:
+                self._parameterNode.inputModel = firstModelNode
 
     def setParameterNode(self, inputParameterNode: Optional[roiFromModelBoundsParameterNode]) -> None:
         """
@@ -232,7 +235,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.inputVolume and self._parameterNode.thresholdedVolume:
+        if self._parameterNode and self._parameterNode.inputModel and self._parameterNode.thresholdedVolume:
             self.ui.applyButton.toolTip = _("Compute output volume")
             self.ui.applyButton.enabled = True
         else:
@@ -252,6 +255,10 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
                 self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
                                    self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
 
+    def onShowModelBoundsButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
+            # Compute output
+            self.logic.modelBounds(self.ui.inputSelector.currentNode(),self.ui.modelBounds )
 
 #
 # roiFromModelBoundsLogic
@@ -276,7 +283,7 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         return roiFromModelBoundsParameterNode(super().getParameterNode())
 
     def process(self,
-                inputVolume: vtkMRMLScalarVolumeNode,
+                inputModel: vtkMRMLScalarVolumeNode,
                 outputVolume: vtkMRMLScalarVolumeNode,
                 imageThreshold: float,
                 invert: bool = False,
@@ -284,14 +291,14 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
-        :param inputVolume: volume to be thresholded
+        :param inputModel: volume to be thresholded
         :param outputVolume: thresholding result
         :param imageThreshold: values above/below this threshold will be set to 0
         :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
         :param showResult: show output volume in slice viewers
         """
 
-        if not inputVolume or not outputVolume:
+        if not inputModel or not outputVolume:
             raise ValueError("Input or output volume is invalid")
 
         import time
@@ -301,7 +308,7 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
         # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
         cliParams = {
-            "InputVolume": inputVolume.GetID(),
+            "inputModel": inputModel.GetID(),
             "OutputVolume": outputVolume.GetID(),
             "ThresholdValue": imageThreshold,
             "ThresholdType": "Above" if invert else "Below",
@@ -354,10 +361,10 @@ class roiFromModelBoundsTest(ScriptedLoadableModuleTest):
         import SampleData
 
         registerSampleData()
-        inputVolume = SampleData.downloadSample("roiFromModelBounds1")
+        inputModel = SampleData.downloadSample("roiFromModelBounds1")
         self.delayDisplay("Loaded test data set")
 
-        inputScalarRange = inputVolume.GetImageData().GetScalarRange()
+        inputScalarRange = inputModel.GetImageData().GetScalarRange()
         self.assertEqual(inputScalarRange[0], 0)
         self.assertEqual(inputScalarRange[1], 695)
 
@@ -369,13 +376,13 @@ class roiFromModelBoundsTest(ScriptedLoadableModuleTest):
         logic = roiFromModelBoundsLogic()
 
         # Test algorithm with non-inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, True)
+        logic.process(inputModel, outputVolume, threshold, True)
         outputScalarRange = outputVolume.GetImageData().GetScalarRange()
         self.assertEqual(outputScalarRange[0], inputScalarRange[0])
         self.assertEqual(outputScalarRange[1], threshold)
 
         # Test algorithm with inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, False)
+        logic.process(inputModel, outputVolume, threshold, False)
         outputScalarRange = outputVolume.GetImageData().GetScalarRange()
         self.assertEqual(outputScalarRange[0], inputScalarRange[0])
         self.assertEqual(outputScalarRange[1], inputScalarRange[1])
