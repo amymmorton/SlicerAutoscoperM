@@ -3,6 +3,7 @@ import os
 from typing import Annotated, Optional
 
 import vtk
+import numpy as np
 
 import slicer
 from slicer.i18n import tr as _
@@ -16,6 +17,7 @@ from slicer.parameterNodeWrapper import (
 
 from slicer import vtkMRMLScalarVolumeNode
 from slicer import vtkMRMLModelNode
+from slicer import vtkMRMLMarkupsROINode
 
 
 #
@@ -32,18 +34,18 @@ class roiFromModelBounds(ScriptedLoadableModule):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = _("roiFromModelBounds")  # TODO: make this more human readable by adding spaces
         # TODO: set categories (folders where the module shows up in the module selector)
-        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Examples")]
+        self.parent.categories = ["Tracking"]
         self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-        self.parent.contributors = ["John Doe (AnyWare Corp.)"]  # TODO: replace with "Firstname Lastname (Organization)"
-        # TODO: update with short description of the module and a link to online module documentation
+        self.parent.contributors = ["Amy Morton (Brown University)"]  
+        
         # _() function marks text as translatable to other languages
         self.parent.helpText = _("""
-This is an example of scripted loadable module bundled in an extension.
-See more information in <a href="https://github.com/organization/projectname#roiFromModelBounds">module documentation</a>.
+WIP modeule part of SlicerAutoscoperM
+Intended to act as foundation fro subvolume 3d-3d volume registration 
 """)
         # TODO: replace with organization, grant and thanks
         self.parent.acknowledgementText = _("""
-This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc., Andras Lasso, PerkLab,
+Template for this file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc., Andras Lasso, PerkLab,
 and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
 """)
 
@@ -112,17 +114,16 @@ class roiFromModelBoundsParameterNode:
     The parameters needed by module.
 
     inputModel- The vtk poly model to compute bounds.
-    imageThreshold - The value at which to threshold the input volume.
-    invertThreshold - If true, will invert the threshold.
-    thresholdedVolume - The output volume that will contain the thresholded volume.
-    invertedVolume - The output volume that will contain the inverted thresholded volume.
+    inputVolume- Voume for ROI crop
+    modelROI - The output volume that will contain the thresholded volume.
+    croppedVolume - The output volume that will be .
     """
 
     inputModel: vtkMRMLModelNode
-    imageThreshold: Annotated[float, WithinRange(-100, 500)] = 100
-    invertThreshold: bool = False
-    thresholdedVolume: vtkMRMLScalarVolumeNode
-    invertedVolume: vtkMRMLScalarVolumeNode
+    inputVolume: vtkMRMLScalarVolumeNode
+    modelBounds: float
+    modelROI: vtkMRMLMarkupsROINode
+    croppedVolume: vtkMRMLScalarVolumeNode
 
 
 #
@@ -234,7 +235,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.inputModel and self._parameterNode.thresholdedVolume:
+        if self._parameterNode and self._parameterNode.inputModel and self._parameterNode.modelROI:
             self.ui.applyButton.toolTip = _("Compute output volume")
             self.ui.applyButton.enabled = True
         else:
@@ -257,8 +258,9 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
     def onShowModelBoundsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
             # Compute output
-            tabRas = [0.0,0.0,0.0,0.0,0.0,0.0]
-            self.logic.modelBounds(self.ui.inputSelector.currentNode(),tabRas)
+            
+            self.logic.modelBounds(self.ui.inputSelector.currentNode(),self.ui.inputVolumeSelector, 
+                                    self.ui.modelROISelector, self.ui.cropVolSelector)
 
 #
 # roiFromModelBoundsLogic
@@ -283,11 +285,43 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         return roiFromModelBoundsParameterNode(super().getParameterNode())
 
     def modelBounds(self,
-                inputModel:vtkMRMLModelNode, 
-                tB: float ) -> None:
+                inputModel:vtkMRMLModelNode,
+                inputVolume: vtkMRMLScalarVolumeNode,
+                modelROI: vtkMRMLMarkupsROINode,
+                croppedVolume: vtkMRMLScalarVolumeNode) -> None:
 
-                inputModel.GetRASBounds(tB)
-                print(tB)
+        tB = [0.0,0.0,0.0,0.0,0.0,0.0]
+        inputModel.GetBounds(tB)
+        #print(tB)
+        modelC = [0.0]*3
+        modelSize = [0.0]*3
+        #strange that the model nodes have a getBounds- but no center and size..
+        #and the roi has bno.. set Bounds- just center and size
+
+        #numpy for array operatots:
+        tnp_min = np.array([tB[0],tB[2],tB[4]])
+        tnp_max = np.array([tB[1],tB[3],tB[5]])
+
+        tnp_C = (tnp_min+tnp_max)/2
+        tnpS = (tnp_min-tnp_max)
+
+        #inputModel.GetCenter(modelC)
+        #inputModel.GetSize(modelSize)
+        mname = inputModel.GetName()
+
+        #use tB lims to size roi
+        #Create ROI node
+        modelROI = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode") 
+        modelROI.SetCenter(tnp_C.tolist())
+        modelROI.SetSize(tnpS.tolist())
+        modelROI.CreateDefaultDisplayNodes()  # only needed for display
+
+        roi_name =mname+"_roi"
+        modelROI.SetName(roi_name)
+
+        #populate in Model ROI Output
+        
+        #print(modelROI)
 
 
 
