@@ -119,7 +119,6 @@ class roiFromModelBoundsParameterNode:
     """
 
     inputModel: vtkMRMLModelNode
-    modelBounds:   list = [0.0,0.0,0.0,0.0,0.0,0.0]
     imageThreshold: Annotated[float, WithinRange(-100, 500)] = 100
     invertThreshold: bool = False
     thresholdedVolume: vtkMRMLScalarVolumeNode
@@ -258,7 +257,8 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
     def onShowModelBoundsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
             # Compute output
-            self.logic.modelBounds(self.ui.inputSelector.currentNode(),self.ui.modelBounds )
+            tabRas = [0.0,0.0,0.0,0.0,0.0,0.0]
+            self.logic.modelBounds(self.ui.inputSelector.currentNode(),tabRas)
 
 #
 # roiFromModelBoundsLogic
@@ -281,6 +281,15 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
     def getParameterNode(self):
         return roiFromModelBoundsParameterNode(super().getParameterNode())
+
+    def modelBounds(self,
+                inputModel:vtkMRMLModelNode, 
+                tB: float ) -> None:
+
+                inputModel.GetRASBounds(tB)
+                print(tB)
+
+
 
     def process(self,
                 inputModel: vtkMRMLScalarVolumeNode,
