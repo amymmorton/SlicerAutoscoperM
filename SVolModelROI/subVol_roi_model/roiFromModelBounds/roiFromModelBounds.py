@@ -1,7 +1,9 @@
+import glob
 import logging
 import os
 from typing import Annotated, Optional
 
+import pathlib
 import vtk
 import numpy as np
 
@@ -113,13 +115,13 @@ class roiFromModelBoundsParameterNode:
     """
     The parameters needed by module.
 
-    inputModel- The vtk poly model to compute bounds.
+    modelFile_path- load several stl inputModels from file
+
     inputVolume- Voume for ROI crop
     modelROI - The output volume that will contain the thresholded volume.
     croppedVolume - The output volume that will be .
     """
-
-    inputModel: vtkMRMLModelNode
+    modelFile_path: pathlib.Path
     inputVolume: vtkMRMLScalarVolumeNode
     modelBounds: float
     modelROI: vtkMRMLMarkupsROINode
@@ -170,7 +172,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         # Buttons
-        self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
+        #self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
         self.ui.showBounds_pb.connect("clicked(bool)", self.onShowModelBoundsButton)
 
         # Make sure parameter node is initialized (needed for module reload)
@@ -191,7 +193,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         if self._parameterNode:
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
             self._parameterNodeGuiTag = None
-            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanGenModelROI)
 
     def onSceneStartClose(self, caller, event) -> None:
         """Called just before the scene is closed."""
@@ -212,10 +214,15 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.setParameterNode(self.logic.getParameterNode())
 
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        if not self._parameterNode.inputModel:
-            firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLModelNode")
-            if firstModelNode:
-                self._parameterNode.inputModel = firstModelNode
+        #if not self._parameterNode.inputModel:
+        #    firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLModelNode")
+        #    if firstModelNode:
+        #        self._parameterNode.inputModel = firstModelNode
+
+        #if not self._parameterNode.inputVolume:
+        #    firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+        #    if firstVolumeNode:
+        #        self._parameterNode.inputVolume = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode: Optional[roiFromModelBoundsParameterNode]) -> None:
         """
@@ -225,42 +232,44 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         if self._parameterNode:
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
-            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanGenModelROI)
         self._parameterNode = inputParameterNode
         if self._parameterNode:
             # Note: in the .ui file, a Qt dynamic property called "SlicerParameterName" is set on each
             # ui element that needs connection.
             self._parameterNodeGuiTag = self._parameterNode.connectGui(self.ui)
-            self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
-            self._checkCanApply()
+            self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanGenModelROI)
+            self._checkCanGenModelROI()
 
-    def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.inputModel and self._parameterNode.modelROI:
-            self.ui.applyButton.toolTip = _("Compute output volume")
-            self.ui.applyButton.enabled = True
+    def _checkCanGenModelROI(self, caller=None, event=None) -> None:
+        if self._parameterNode and self._parameterNode.inputVolume and self._parameterNode.modelFile_path:
+            self.ui.showBounds_pb.toolTip = _("Compute output volume")
+            self.ui.showBounds_pb.enabled = True
         else:
-            self.ui.applyButton.toolTip = _("Select input and output volume nodes")
-            self.ui.applyButton.enabled = False
+            self.ui.showBounds_pb.toolTip = _("Select input ModelPath and volume nodes")
+            self.ui.showBounds_pb.enabled = True
 
-    def onApplyButton(self) -> None:
-        """Run processing when user clicks "Apply" button."""
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
-            self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
-                               self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
-
-            # Compute inverted output (if needed)
-            if self.ui.invertedOutputSelector.currentNode():
-                # If additional output volume is selected then result with inverted threshold is written there
-                self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
-                                   self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
-
+   
     def onShowModelBoundsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
             # Compute output
+            volumeNode = self.ui.inputVolSelector.currentNode()
+            modelFileDir = self.ui.modelPath_lineEdit.currentPath
             
-            self.logic.modelBounds(self.ui.inputSelector.currentNode(),self.ui.inputVolumeSelector, 
+            #TO DO write validatePaths logic funciton
+            #    if not self.logic.validatePaths(modelFileDir=modelFileDir):
+            #        raise ValueError("Invalid paths")
+            #        return
+            modelFiles = glob.glob(os.path.join(modelFileDir, "*.*"))
+            
+            for indx, file in enumerate(modelFiles):
+                modelNode = slicer.util.loadNodeFromFile(file)
+                modelNode.CreateDefaultDisplayNodes()
+                self.logic.modelBounds(modelNode,volumeNode, 
                                     self.ui.modelROISelector, self.ui.cropVolSelector)
+ 
+                #self.logic.modelBounds(self.ui.inputSelector.currentNode(),self.ui.inputVolumeSelector, 
+                #                    self.ui.modelROISelector, self.ui.cropVolSelector)
 
 #
 # roiFromModelBoundsLogic
@@ -293,8 +302,8 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         tB = [0.0,0.0,0.0,0.0,0.0,0.0]
         inputModel.GetBounds(tB)
         #print(tB)
-        modelC = [0.0]*3
-        modelSize = [0.0]*3
+        #modelC = [0.0]*3
+        #modelSize = [0.0]*3
         #strange that the model nodes have a getBounds- but no center and size..
         #and the roi has bno.. set Bounds- just center and size
 
@@ -319,49 +328,11 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         roi_name =mname+"_roi"
         modelROI.SetName(roi_name)
 
-        #populate in Model ROI Output
+        #populate in Model ROI Output..?
         
         #print(modelROI)
 
 
-
-    def process(self,
-                inputModel: vtkMRMLScalarVolumeNode,
-                outputVolume: vtkMRMLScalarVolumeNode,
-                imageThreshold: float,
-                invert: bool = False,
-                showResult: bool = True) -> None:
-        """
-        Run the processing algorithm.
-        Can be used without GUI widget.
-        :param inputModel: volume to be thresholded
-        :param outputVolume: thresholding result
-        :param imageThreshold: values above/below this threshold will be set to 0
-        :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
-        :param showResult: show output volume in slice viewers
-        """
-
-        if not inputModel or not outputVolume:
-            raise ValueError("Input or output volume is invalid")
-
-        import time
-
-        startTime = time.time()
-        logging.info("Processing started")
-
-        # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
-        cliParams = {
-            "inputModel": inputModel.GetID(),
-            "OutputVolume": outputVolume.GetID(),
-            "ThresholdValue": imageThreshold,
-            "ThresholdType": "Above" if invert else "Below",
-        }
-        cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
-        # We don't need the CLI module node anymore, remove it to not clutter the scene with it
-        slicer.mrmlScene.RemoveNode(cliNode)
-
-        stopTime = time.time()
-        logging.info(f"Processing completed in {stopTime-startTime:.2f} seconds")
 
 
 #
