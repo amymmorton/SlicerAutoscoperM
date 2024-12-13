@@ -1,3 +1,12 @@
+"""
+For debugging in Slicer, use the folling to manipulate the module objects:
+
+mWidget = slicer.modules.roifrommodelbounds.widgetRepresentation().self()
+mLogic = mWidget.logic
+mNode = mLogic.getParameterNode() 
+"""
+
+
 import glob
 import os
 import pathlib
@@ -119,7 +128,6 @@ class roiFromModelBoundsParameterNode:
     The parameters needed by module.
 
     modelFile_path- load several stl inputModels from file
-
     inputVolume- Voume for ROI crop
     modelROI - The output volume that will contain the thresholded volume.
     croppedVolume - The output volume that will be .
@@ -176,7 +184,6 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         # Buttons
-        # self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
         self.ui.showBounds_pb.connect("clicked(bool)", self.onShowModelBoundsButton)
 
         # Make sure parameter node is initialized (needed for module reload)
@@ -218,15 +225,15 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.setParameterNode(self.logic.getParameterNode())
 
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        # if not self._parameterNode.inputModel:
-        #    firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLModelNode")
-        #    if firstModelNode:
-        #        self._parameterNode.inputModel = firstModelNode
+        if not self._parameterNode.modelROI:
+            firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLMarkupsROINode")
+            if firstModelNode:
+                self._parameterNode.modelROI = firstModelNode
 
-        # if not self._parameterNode.inputVolume:
-        #    firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-        #    if firstVolumeNode:
-        #        self._parameterNode.inputVolume = firstVolumeNode
+        if not self._parameterNode.inputVolume:
+            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+            if firstVolumeNode:
+                self._parameterNode.inputVolume = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode: Optional[roiFromModelBoundsParameterNode]) -> None:
         """
@@ -250,28 +257,12 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.ui.showBounds_pb.toolTip = _("Compute output volume")
             self.ui.showBounds_pb.enabled = True
         else:
-            self.ui.showBounds_pb.toolTip = _("Select input ModelPath and volume nodes")
+            self.ui.showBounds_pb.toolTip = _("Select input ModelPath and volume node")
             self.ui.showBounds_pb.enabled = True
 
     def onShowModelBoundsButton(self) -> None:
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
-            volumeNode = self.ui.inputVolSelector.currentNode()
-            modelFileDir = self.ui.modelPath_lineEdit.currentPath
-
-            # TO DO write validatePaths logic function
-            #    if not self.logic.validatePaths(modelFileDir=modelFileDir):
-            #        raise ValueError("Invalid paths")
-            #        return
-            modelFiles = glob.glob(os.path.join(modelFileDir, "*.*"))
-
-            for _indx, file in enumerate(modelFiles):
-                modelNode = slicer.util.loadNodeFromFile(file)
-                modelNode.CreateDefaultDisplayNodes()
-                self.logic.modelBounds(modelNode, volumeNode, self.ui.modelROISelector, self.ui.cropVolSelector)
-
-                # self.logic.modelBounds(self.ui.inputSelector.currentNode(),self.ui.inputVolumeSelector,
-                #                    self.ui.modelROISelector, self.ui.cropVolSelector)
+        """Load Models from folder, compute bounds, assign to new roi"""
+        self.logic.loadModelsComputeBounds()
 
 
 #
@@ -296,13 +287,22 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
     def getParameterNode(self):
         return roiFromModelBoundsParameterNode(super().getParameterNode())
 
-    def modelBounds(
-        self,
-        inputModel: vtkMRMLModelNode,
-        inputVolume: vtkMRMLScalarVolumeNode,  # noqa: ARG002
-        modelROI: vtkMRMLMarkupsROINode,
-        croppedVolume: vtkMRMLScalarVolumeNode,  # noqa: ARG002
-    ) -> None:
+    def loadModelsComputeBounds(self):
+        parameterNode = self.getParameterNode()
+        modelFileDir = parameterNode.modelFile_path
+
+        modelFiles = glob.glob(os.path.join(modelFileDir, "*.*"))
+        #return modelFiles
+
+        for _indx, file in enumerate(modelFiles):
+            modelNode = slicer.util.loadNodeFromFile(file)
+            modelNode.CreateDefaultDisplayNodes()
+            self.modelBounds(modelNode) #, volumeNode, self.ui.modelROISelector, self.ui.cropVolSelector)
+
+
+    def modelBounds(self, inputModel) -> None:
+
+        inputModel: vtkMRMLModelNode
 
         tB = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         inputModel.GetBounds(tB)
@@ -332,10 +332,6 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
         roi_name = mname + "_roi"
         modelROI.SetName(roi_name)
-
-        # populate in Model ROI Output..?
-
-        # print(modelROI)
 
 
 #
