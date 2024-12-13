@@ -135,9 +135,10 @@ class roiFromModelBoundsParameterNode:
 
     modelFile_path: pathlib.Path
     inputVolume: vtkMRMLScalarVolumeNode
-    modelBounds: float
+    #modelBounds: float
     modelROI: vtkMRMLMarkupsROINode
     croppedVolume: vtkMRMLScalarVolumeNode
+    altVol: vtkMRMLScalarVolumeNode
 
 
 #
@@ -289,6 +290,8 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
     def loadModelsComputeBounds(self):
         parameterNode = self.getParameterNode()
+        #TO DO error checking on model path and volume node
+        
         modelFileDir = parameterNode.modelFile_path
 
         modelFiles = glob.glob(os.path.join(modelFileDir, "*.*"))
@@ -297,10 +300,13 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         for _indx, file in enumerate(modelFiles):
             modelNode = slicer.util.loadNodeFromFile(file)
             modelNode.CreateDefaultDisplayNodes()
-            self.modelBounds(modelNode) #, volumeNode, self.ui.modelROISelector, self.ui.cropVolSelector)
+            roi_this = self.modelBounds(modelNode) 
+            parameterNode.modelROI =roi_this
+            #parameterNode.croppedVolume = self.doCropVolume()
+            self.doCropVolume()
 
 
-    def modelBounds(self, inputModel) -> None:
+    def modelBounds(self, inputModel):
 
         inputModel: vtkMRMLModelNode
 
@@ -332,6 +338,51 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
         roi_name = mname + "_roi"
         modelROI.SetName(roi_name)
+
+        return modelROI
+
+
+    def doCropVolume(self)->None:
+        
+        parameterNode = self.getParameterNode()
+        #TO DO error checking on model path and volume node
+        
+        inVolume = parameterNode.inputVolume
+        roi = parameterNode.modelROI
+        
+        fillValue = 0.0
+        interpolate = False
+        spacingScalingConst = 1.0
+        isotropicResampling = False
+        interpolationMode = slicer.vtkMRMLCropVolumeParametersNode().InterpolationLinear
+        cropLogic = slicer.modules.cropvolume.logic()
+        cvpn = slicer.vtkMRMLCropVolumeParametersNode()
+
+        cvpn.SetROINodeID(roi.GetID())
+        cvpn.SetInputVolumeNodeID(inVolume.GetID())
+        cvpn.SetFillValue(fillValue)
+        cvpn.SetVoxelBased(not interpolate)
+        cvpn.SetSpacingScalingConst(spacingScalingConst)
+        cvpn.SetIsotropicResampling(isotropicResampling)
+        cvpn.SetInterpolationMode(interpolationMode)
+        cropLogic.Apply(cvpn)
+        roi.SetDisplayVisibility(False)
+        
+        outputVolumeNodeID = cvpn.GetOutputVolumeNodeID()
+        #https://www.slicer.org/wiki/Documentation/4.3/Developers/Python_scripting
+        views = slicer.app.layoutManager().sliceViewNames()
+        for view in views:
+            view_logic = slicer.app.layoutManager().sliceWidget(view).sliceLogic()
+            view_cn = view_logic.GetSliceCompositeNode()
+            view_cn.SetBackgroundVolumeID(outputVolumeNodeID)
+            view_logic.FitSliceToAll()
+        
+        #TO DO rename with model file name
+        outVolNode = cvpn.GetOutputVolumeNode
+        #TO DO wrong format- this is 'cropvole'  needs to be 'scalarVolume'
+        #return outVolNode
+
+
 
 
 #
@@ -367,37 +418,4 @@ class roiFromModelBoundsTest(ScriptedLoadableModuleTest):
         your test should break so they know that the feature is needed.
         """
 
-        self.delayDisplay("Starting the test")
-
-        # Get/create input data
-
-        import SampleData
-
-        registerSampleData()
-        inputModel = SampleData.downloadSample("roiFromModelBounds1")
-        self.delayDisplay("Loaded test data set")
-
-        inputScalarRange = inputModel.GetImageData().GetScalarRange()
-        self.assertEqual(inputScalarRange[0], 0)
-        self.assertEqual(inputScalarRange[1], 695)
-
-        outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-        threshold = 100
-
-        # Test the module logic
-
-        logic = roiFromModelBoundsLogic()
-
-        # Test algorithm with non-inverted threshold
-        logic.process(inputModel, outputVolume, threshold, True)
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], threshold)
-
-        # Test algorithm with inverted threshold
-        logic.process(inputModel, outputVolume, threshold, False)
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], inputScalarRange[1])
-
-        self.delayDisplay("Test passed")
+        self.delayDisplay("TO DO configure test for this module ")
