@@ -1,9 +1,9 @@
 """
-For debugging in Slicer, use the folling to manipulate the module objects:
+For debugging in Slicer, use the following to manipulate the module objects:
 
 mWidget = slicer.modules.roifrommodelbounds.widgetRepresentation().self()
 mLogic = mWidget.logic
-mNode = mLogic.getParameterNode() 
+mNode = mLogic.getParameterNode()
 """
 
 
@@ -135,7 +135,7 @@ class roiFromModelBoundsParameterNode:
 
     modelFile_path: pathlib.Path
     inputVolume: vtkMRMLScalarVolumeNode
-    #modelBounds: float
+    # modelBounds: float
     modelROI: vtkMRMLMarkupsROINode
     croppedVolume: vtkMRMLScalarVolumeNode
     altVol: vtkMRMLScalarVolumeNode
@@ -290,21 +290,20 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
     def loadModelsComputeBounds(self):
         parameterNode = self.getParameterNode()
-        #TO DO error checking on model path and volume node
-        
+        # TO DO error checking on model path and volume node
+
         modelFileDir = parameterNode.modelFile_path
 
         modelFiles = glob.glob(os.path.join(modelFileDir, "*.*"))
-        #return modelFiles
+        # return modelFiles
 
         for _indx, file in enumerate(modelFiles):
             modelNode = slicer.util.loadNodeFromFile(file)
             modelNode.CreateDefaultDisplayNodes()
-            roi_this = self.modelBounds(modelNode) 
-            parameterNode.modelROI =roi_this
-            #parameterNode.croppedVolume = self.doCropVolume()
+            roi_this = self.modelBounds(modelNode)
+            parameterNode.modelROI = roi_this
+            # parameterNode.croppedVolume = self.doCropVolume()
             self.doCropVolume()
-
 
     def modelBounds(self, inputModel):
 
@@ -341,15 +340,14 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
         return modelROI
 
+    def doCropVolume(self) -> None:
 
-    def doCropVolume(self)->None:
-        
         parameterNode = self.getParameterNode()
-        #TO DO error checking on model path and volume node
-        
+        # TO DO error checking on model path and volume node
+
         inVolume = parameterNode.inputVolume
         roi = parameterNode.modelROI
-        
+
         fillValue = 0.0
         interpolate = False
         spacingScalingConst = 1.0
@@ -367,22 +365,19 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         cvpn.SetInterpolationMode(interpolationMode)
         cropLogic.Apply(cvpn)
         roi.SetDisplayVisibility(False)
-        
+
         outputVolumeNodeID = cvpn.GetOutputVolumeNodeID()
-        #https://www.slicer.org/wiki/Documentation/4.3/Developers/Python_scripting
+        # https://www.slicer.org/wiki/Documentation/4.3/Developers/Python_scripting
         views = slicer.app.layoutManager().sliceViewNames()
         for view in views:
             view_logic = slicer.app.layoutManager().sliceWidget(view).sliceLogic()
             view_cn = view_logic.GetSliceCompositeNode()
             view_cn.SetBackgroundVolumeID(outputVolumeNodeID)
             view_logic.FitSliceToAll()
-        
-        #TO DO rename with model file name
-        outVolNode = cvpn.GetOutputVolumeNode
-        #TO DO wrong format- this is 'cropvole'  needs to be 'scalarVolume'
-        #return outVolNode
 
-
+        # TO DO rename with model file name
+        # TO DO wrong format- this is 'cropvole'  needs to be 'scalarVolume'
+        # return outVolNode
 
 
 #
