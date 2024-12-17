@@ -135,10 +135,10 @@ class roiFromModelBoundsParameterNode:
 
     modelFile_path: pathlib.Path
     inputVolume: vtkMRMLScalarVolumeNode
-    # modelBounds: float
+    inputHierarchyRootID: int
     modelROI: vtkMRMLMarkupsROINode
     croppedVolume: vtkMRMLScalarVolumeNode
-    altVol: vtkMRMLScalarVolumeNode
+    targetVolume: vtkMRMLScalarVolumeNode
 
 
 #
@@ -224,7 +224,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         # so that when the scene is saved and reloaded, these settings are restored.
 
         self.setParameterNode(self.logic.getParameterNode())
-
+        """
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
         if not self._parameterNode.modelROI:
             firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLMarkupsROINode")
@@ -235,6 +235,7 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
             if firstVolumeNode:
                 self._parameterNode.inputVolume = firstVolumeNode
+        """
 
     def setParameterNode(self, inputParameterNode: Optional[roiFromModelBoundsParameterNode]) -> None:
         """
@@ -302,8 +303,11 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
             modelNode.CreateDefaultDisplayNodes()
             roi_this = self.modelBounds(modelNode)
             parameterNode.modelROI = roi_this
-            # parameterNode.croppedVolume = self.doCropVolume()
-            self.doCropVolume()
+            cN = self.doCropVolume()
+
+            # rename with model file name
+            cropNewName = cN.GetName() + " " + modelNode.GetName()
+            cN.SetName(cropNewName)
 
     def modelBounds(self, inputModel):
 
@@ -340,7 +344,7 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
 
         return modelROI
 
-    def doCropVolume(self) -> None:
+    def doCropVolume(self):
 
         parameterNode = self.getParameterNode()
         # TO DO error checking on model path and volume node
@@ -367,6 +371,10 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         roi.SetDisplayVisibility(False)
 
         outputVolumeNodeID = cvpn.GetOutputVolumeNodeID()
+        # format- this is 'cropvol'  needs to be 'scalarVolume'
+        outVolNode = slicer.mrmlScene.GetNodeByID(outputVolumeNodeID)
+
+        # display pretty:
         # https://www.slicer.org/wiki/Documentation/4.3/Developers/Python_scripting
         views = slicer.app.layoutManager().sliceViewNames()
         for view in views:
@@ -375,9 +383,7 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
             view_cn.SetBackgroundVolumeID(outputVolumeNodeID)
             view_logic.FitSliceToAll()
 
-        # TO DO rename with model file name
-        # TO DO wrong format- this is 'cropvole'  needs to be 'scalarVolume'
-        # return outVolNode
+        return outVolNode
 
 
 #
