@@ -135,9 +135,25 @@ class roiFromModelBoundsParameterNode:
 
     modelFile_path: pathlib.Path
     inputVolume: vtkMRMLScalarVolumeNode
-    inputHierarchyRootID: int
+
+    # keep track of the modelss:
+    modelIDs = vtk.vtkStringArray()
+
+    # keep track of the rois:
+    roiIDs = vtk.vtkStringArray()
+
+    # keep track of the vols:
+    volIDs = vtk.vtkStringArray()
+
+    # keep track of the Tforms:
+    tf_seed_IDs = vtk.vtkStringArray()
+    tf_result_IDs = vtk.vtkStringArray()
+
     modelROI: vtkMRMLMarkupsROINode
     croppedVolume: vtkMRMLScalarVolumeNode
+
+    # FUTURE DEVELOPMENT
+    inputHierarchyRootID: int
     targetVolume: vtkMRMLScalarVolumeNode
 
 
@@ -186,9 +202,13 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         # Buttons
         self.ui.showBounds_pb.connect("clicked(bool)", self.onShowModelBoundsButton)
+        self.ui.cropInputVol.connect("clicked(bool)", self.onCropVolumeButton)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
+
+        # Trigger any required UI updates based on the volume node selected by default
+        self.onCurrentNodeChanged()
 
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
@@ -254,6 +274,26 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanGenModelROI)
             self._checkCanGenModelROI()
 
+    def updateParameterNodeFromGUI(self, _caller=None, _event=None):
+        """
+        This method is called when the user makes any change in the GUI.
+        The changes are saved into the parameter node (so that they are restored when the scene is saved and loaded).
+        """
+
+        if self._parameterNode is None or self._updatingGUIFromParameterNode:
+            return
+
+        wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
+
+        # NA
+
+        self._parameterNode.EndModify(wasModified)
+
+    def onCurrentNodeChanged(self):
+        """
+        Updates and UI components that correspond to the selected input volume node
+        """
+
     def _checkCanGenModelROI(self, _caller=None, _event=None) -> None:
         if self._parameterNode and self._parameterNode.inputVolume and self._parameterNode.modelFile_path:
             self.ui.showBounds_pb.toolTip = _("Compute output volume")
@@ -265,6 +305,10 @@ class roiFromModelBoundsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
     def onShowModelBoundsButton(self) -> None:
         """Load Models from folder, compute bounds, assign to new roi"""
         self.logic.loadModelsComputeBounds()
+
+    def onCropVolumeButton(self) -> None:
+        """Load Models from folder, compute bounds, assign to new roi"""
+        self.logic.cropFromBounds()
 
 
 #
@@ -301,13 +345,14 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         for _indx, file in enumerate(modelFiles):
             modelNode = slicer.util.loadNodeFromFile(file)
             modelNode.CreateDefaultDisplayNodes()
-            roi_this = self.modelBounds(modelNode)
-            parameterNode.modelROI = roi_this
-            cN = self.doCropVolume()
 
-            # rename with model file name
-            cropNewName = cN.GetName() + " " + modelNode.GetName()
-            cN.SetName(cropNewName)
+            # roi:
+            roi_this = self.modelBounds(modelNode)
+
+            # store this roi ant this index- to ref in vol crop , tfroms
+            parameterNode.roiIDs.InsertNextValue(roi_this.GetID())
+            # model too (tform on model best visibility)
+            parameterNode.modelIDs.InsertNextValue(modelNode.GetID())
 
     def modelBounds(self, inputModel):
 
@@ -339,16 +384,52 @@ class roiFromModelBoundsLogic(ScriptedLoadableModuleLogic):
         modelROI.SetSize(tnpS.tolist())
         modelROI.CreateDefaultDisplayNodes()  # only needed for display
 
+        # TODO hide the display
+
         roi_name = mname + "_roi"
         modelROI.SetName(roi_name)
 
         return modelROI
 
+    def cropFromBounds(self):
+        parameterNode = self.getParameterNode()
+
+        tformIDs = parameterNode.tf_seed_IDs
+        roiIDs = parameterNode.roiIDs
+        numROIs = roiIDs.GetNumberOfValues()
+
+        modelList = parameterNode.modelIDs
+
+        for _indx in range(numROIs):
+            roiID_this = roiIDs.GetValue(_indx)
+            modelID_this = modelList.GetValue(_indx)
+            modelNode_this = slicer.mrmlScene.GetNodeByID(modelID_this)
+
+            parameterNode.modelROI = slicer.mrmlScene.GetNodeByID(roiID_this)
+
+            # self rn is the logic class- not the widget.. no ui atteributes
+            # self.ui.modelROISelector.setCurrentNode(roi_this)
+
+            # crop vol
+            cN = self.doCropVolume()
+
+            # rename with model file name
+            cropNewName = cN.GetName() + " " + modelNode_this.GetName()
+            cN.SetName(cropNewName)
+
+            tform = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLinearTransformNode")
+            tform.SetName("in_tform_" + cropNewName)
+
+            modelNode_this.SetAndObserveTransformNodeID(tform.GetID())
+
+            # Enable interactive transform
+            # tform.SetInteractionMode(slicer.vtkMRMLTransformNode.InteractionModeTranslate)
+
+            tformIDs.InsertNextValue(tform.GetID())
+
     def doCropVolume(self):
 
         parameterNode = self.getParameterNode()
-        # TO DO error checking on model path and volume node
-
         inVolume = parameterNode.inputVolume
         roi = parameterNode.modelROI
 
