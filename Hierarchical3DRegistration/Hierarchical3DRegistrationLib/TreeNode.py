@@ -85,17 +85,12 @@ class TreeNode:
         # Compute centroids
 
         segStatLogic = SegmentStatistics.SegmentStatisticsLogic()
-        segStatLogic.getParameterNode().SetParameter("Segmentation", segNode.GetID())
-        segStatLogic.getParameterNode().SetParameter("LabelmapSegmentStatisticsPlugin.centroid_ras.enabled", str(True))
-        segStatLogic.getParameterNode().SetParameter(
-            "LabelmapSegmentStatisticsPlugin.principal_axis_x.enabled", str(True)
-        )
-        segStatLogic.getParameterNode().SetParameter(
-            "LabelmapSegmentStatisticsPlugin.principal_axis_y.enabled", str(True)
-        )
-        segStatLogic.getParameterNode().SetParameter(
-            "LabelmapSegmentStatisticsPlugin.principal_axis_z.enabled", str(True)
-        )
+        segStatParams = segStatLogic.getParameterNode()
+        segStatParams.SetParameter("Segmentation", segNode.GetID())
+        segStatParams.SetParameter("LabelmapSegmentStatisticsPlugin.centroid_ras.enabled", str(True))
+        segStatParams.SetParameter("LabelmapSegmentStatisticsPlugin.principal_axis_x.enabled", str(True))
+        segStatParams.SetParameter("LabelmapSegmentStatisticsPlugin.principal_axis_y.enabled", str(True))
+        segStatParams.SetParameter("LabelmapSegmentStatisticsPlugin.principal_axis_z.enabled", str(True))
         segStatLogic.computeStatistics()
         stats = segStatLogic.getStatistics()
 
