@@ -1319,8 +1319,9 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
     @staticmethod
     def checkROIAndVolumeOverlap(
         roiNode: slicer.vtkMRMLMarkupsROINode,
+        modelNode: slicer.vtkMRMLModelNode,
         volumeNode: slicer.vtkMRMLScalarVolumeNode,
-    ) -> Optional[list[float]]:
+    ) -> Optional[slicer.vtkMRMLModelNode]:
         """Utility function to check if the bounds of the ROI exceed those of
         the target volume, and if so compute the bounds of their intersection"""
         roi_transformed_bounds = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -1349,7 +1350,10 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
 
         # check if the bounds of the intersection are different than the original ROI
         bb_bounds = np.ravel([bb_min, bb_max], "F")
-        if np.any(np.abs(bb_bounds - np.array(roi_transformed_bounds))):
+        #which dimensions are outside the target volume bounds?
+        isInbounds = bb_bounds == np.array(roi_transformed_bounds)
+        
+        if np.any(isInbounds):
             # if there is any difference between the bounds of the transformed ROI
             # and the bounds of the intersection, it must mean that the transformed
             # ROI exceeds the bounds of the target volume, so we need to trim it.
@@ -1359,11 +1363,45 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
             if np.any(bb_size <= 0):
                 raise ValueError("Invalid transformation chosen, ROI and target volume node do not overlap!")
 
-            bb_center = (bb_min + bb_max) / 2
+            #construct plane @bb_bounds(where false), in normal of dimension greatest issue
+            bd = np.argmax(np.abs(np.abs(bb_bounds)- abs(np.array(roi_transformed_bounds))))
+            extent_t = bb_bounds[bd]
+            if bd > 1:
+                if bd < 3:
+                    normplane = [0, 1, 0]
+                    plCut = "Green"
+                else:
+                    normplane = [0, 0, 1]
+                    plCut = "Red"
+            else:
+                normplane = [1, 0, 0]
+                plCut = "Yellow"
+                
+            if bd % 2 == 0:
+                isNeg = 1
 
-            return bb_center.tolist(), bb_size.tolist()
+            extnp = np.array(normplane) * extent_t
+            lm = slicer.app.layoutManager()    
+            sliceNode = lm.sliceWidget(plCut).mrmlSliceNode()
+            sliceNode.JumpSliceByOffsetting(extnp[0], extnp[1], extnp[2])
+            #sliceNode.SetSliceOffsetValue(extnp[0], extnp[1], extnp[2])
 
-        return None, None
+            planeModeler = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLDynamicModelerNode")
+            planeModeler.SetToolName("Plane cut")
+            planeModeler.SetNodeReferenceID("PlaneCut.InputModel", modelNode.GetID())
+            planeModeler.SetNodeReferenceID("PlaneCut.InputPlane", sliceNode.GetID())
+            
+            #Output models"
+            antModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+            planeModeler.SetNodeReferenceID("PlaneCut.OutputPositiveModel", antModel.GetID())
+            slicer.modules.dynamicmodeler.logic().RunDynamicModelerTool(planeModeler)
+
+            #TO DO: remove all intermediate nodes from scene
+            slicer.mrmlScene.RemoveNode(planeModeler)
+
+            return antModel
+
+        return None
 
     @staticmethod
     def cropVolumeFromROI(
