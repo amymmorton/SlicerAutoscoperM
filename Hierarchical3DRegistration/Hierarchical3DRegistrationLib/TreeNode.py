@@ -23,7 +23,6 @@ class TreeNode:
         sourceVolume: slicer.vtkMRMLScalarVolumeNode,
         parent: TreeNode | None = None,
         isRoot: bool = False,
-        roiMod: bool = False,
     ):
         """
         Create a new TreeNode with the given parent.
@@ -33,12 +32,10 @@ class TreeNode:
         :param sourceVolume: the scalar volume to register from (from which this node's model was generated)
         :param parent: reference to the parent node
         :param isRoot: whether this node it the root of the hierarchy
-        :param roiMod: check this roi if was modifed in prev frame
         """
         self.hierarchyID = hierarchyID
         self.isRoot = isRoot
         self.parent = parent
-        self.roiMod = roiMod
 
         if self.parent is not None and self.isRoot:
             raise ValueError("Node cannot be root and have a parent")
@@ -75,9 +72,9 @@ class TreeNode:
         ]
 
     def _generateRoiFromModel(self,
-            inputModel: slicer.vtkMRMLModelNode = None,
-            inputVolume: slicer.vtkMRMLScalarVolumeNode = None,
-            ) -> slicer.vtkMRMLMarkupsROINode:
+        inputModel: slicer.vtkMRMLModelNode = None,
+        inputVolume: slicer.vtkMRMLScalarVolumeNode = None,
+    ) -> slicer.vtkMRMLMarkupsROINode:
         """Creates a region of interest node from this TreeNode's model."""
         import SegmentStatistics
         import vtk
@@ -252,35 +249,44 @@ class TreeNode:
         """
         Crop the target CT frame based on the initial guess transform and this node's ROI.
         """
-        
-        #do we need to reset roi - or is it intact in this frame?
-        if self.roiMod:
-            self.roi = self._generateRoiFromModel()
-            self.roiMod = False
 
         current_tfm = self.getTransform(frameIdx)
+        current_model = self.model
+        current_roi = self.roi
         self.roi.SetAndObserveTransformNodeID(current_tfm.GetID())
 
         # next check if the roi bounds exceed the CT frame target volume
         cut_model = AutoscoperMLogic.checkROIAndVolumeOverlap(self.roi, self.model, ctFrame)
-        if (cut_model != None):
-            self.roiMod = True
-
-            logging.info(f"Downsizing ROI of bone '{self.name}' to not exceed target volume '{ctFrame.GetName()}'")
+        if cut_model is not None:
+            logging.info(f"Using downsized ROI for '{self.name}' to not exceed target volume '{ctFrame.GetName()}'")
+            # apply the inverse of the transform from initial position so that
+            # the cut model is aligned with source volume, not current frame
+            current_tfm.Inverse()
+            cut_model.SetAndObserveTransformNodeID(current_tfm.GetID())
+            cut_model.HardenTransform()
+            current_tfm.Inverse()
             # update roi to dimension of the intersection and align it
-            self.roi = self._generateRoiFromModel(cut_model, ctFrame)
+            current_model = cut_model
+            current_roi = self._generateRoiFromModel(cut_model, ctFrame)
 
-            # replace the cropped source volume with that from the new roi
-            slicer.mrmlScene.RemoveNode(self.croppedSourceVolume)
-            self.croppedSourceVolume = AutoscoperMLogic.cropVolumeFromROI(self.sourceVolume, self.roi)
-            self.croppedSourceVolume.SetName(f"{self.sourceVolume.GetName()}_{self.name}_cropped_source")
-            self.roi.SetAndObserveTransformNodeID(current_tfm.GetID())
+        # generate the cropped source volume based on the current frame's roi
+        slicer.mrmlScene.RemoveNode(self.croppedSourceVolume)
+        current_roi.SetAndObserveTransformNodeID(None)
+        self.croppedSourceVolume = AutoscoperMLogic.cropVolumeFromROI(self.sourceVolume, current_roi)
+        self.croppedSourceVolume.SetName(f"{self.sourceVolume.GetName()}_{self.name}_cropped_source")
+        current_roi.SetAndObserveTransformNodeID(current_tfm.GetID())
 
-        # generate cropped volume from the given frame
-        self.model.SetAndObserveTransformNodeID(current_tfm.GetID())
+        # generate cropped target volume from the given frame
+        current_model.SetAndObserveTransformNodeID(current_tfm.GetID())
         self.croppedSourceVolume.SetAndObserveTransformNodeID(current_tfm.GetID())
         croppedFrameNode = self.getCroppedFrame(frameIdx)
-        AutoscoperMLogic.cropVolumeFromROI(ctFrame, self.roi, croppedFrameNode)
+        AutoscoperMLogic.cropVolumeFromROI(ctFrame, current_roi, croppedFrameNode)
+
+        # TODO: uncomment below when we're done debugging
+        #if cut_model is not None:
+        #    # delete clone of model that was cut, as well as the ROI for it
+        #    slicer.mrmlScene.RemoveNode(cut_model)
+        #    slicer.mrmlScene.RemoveNode(current_roi)
 
     def getTransform(self, idx: int) -> slicer.vtkMRMLTransformNode:
         """Returns the transform at the provided index."""

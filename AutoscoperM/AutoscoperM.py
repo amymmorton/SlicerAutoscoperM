@@ -1351,8 +1351,8 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
         # check if the bounds of the intersection are different than the original ROI
         bb_bounds = np.ravel([bb_min, bb_max], "F")
         #which dimensions are outside the target volume bounds?
-        isInbounds = bb_bounds == np.array(roi_transformed_bounds)
-        
+        isInbounds = bb_bounds != np.array(roi_transformed_bounds)
+
         if np.any(isInbounds):
             # if there is any difference between the bounds of the transformed ROI
             # and the bounds of the intersection, it must mean that the transformed
