@@ -71,7 +71,8 @@ class TreeNode:
             for child_id in children_ids
         ]
 
-    def _generateRoiFromModel(self,
+    def _generateRoiFromModel(
+        self,
         inputModel: slicer.vtkMRMLModelNode = None,
         inputVolume: slicer.vtkMRMLScalarVolumeNode = None,
     ) -> slicer.vtkMRMLMarkupsROINode:
@@ -146,9 +147,9 @@ class TreeNode:
         modelROI.HardenTransform()
 
         # remove the transform node, seg node and the cloned model node
-        #slicer.mrmlScene.RemoveNode(tfm_pc)  # remove the transform node
-        #slicer.mrmlScene.RemoveNode(clonedNode)  # remove the cloned model node
-        #slicer.mrmlScene.RemoveNode(segNode)  # remove the segmentation node
+        slicer.mrmlScene.RemoveNode(tfm_pc)  # remove the transform node
+        slicer.mrmlScene.RemoveNode(clonedNode)  # remove the cloned model node
+        slicer.mrmlScene.RemoveNode(segNode)  # remove the segmentation node
 
         return modelROI
 
@@ -283,10 +284,10 @@ class TreeNode:
         AutoscoperMLogic.cropVolumeFromROI(ctFrame, current_roi, croppedFrameNode)
 
         # TODO: uncomment below when we're done debugging
-        #if cut_model is not None:
-        #    # delete clone of model that was cut, as well as the ROI for it
-        #    slicer.mrmlScene.RemoveNode(cut_model)
-        #    slicer.mrmlScene.RemoveNode(current_roi)
+        if cut_model is not None:
+            #    # delete clone of model that was cut, as well as the ROI for it
+            slicer.mrmlScene.RemoveNode(cut_model)
+            slicer.mrmlScene.RemoveNode(current_roi)
 
     def getTransform(self, idx: int) -> slicer.vtkMRMLTransformNode:
         """Returns the transform at the provided index."""
