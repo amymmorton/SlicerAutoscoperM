@@ -283,7 +283,6 @@ class TreeNode:
         croppedFrameNode = self.getCroppedFrame(frameIdx)
         AutoscoperMLogic.cropVolumeFromROI(ctFrame, current_roi, croppedFrameNode)
 
-        # TODO: uncomment below when we're done debugging
         if cut_model is not None:
             #    # delete clone of model that was cut, as well as the ROI for it
             slicer.mrmlScene.RemoveNode(cut_model)

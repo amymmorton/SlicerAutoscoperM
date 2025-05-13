@@ -1380,14 +1380,10 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
                 normplane = [1, 0, 0]
                 plCut = "Yellow"
 
-            if bd % 2 == 0:
-                pass
-
             extnp = np.array(normplane) * extent_t
             lm = slicer.app.layoutManager()
             sliceNode = lm.sliceWidget(plCut).mrmlSliceNode()
             sliceNode.JumpSliceByOffsetting(extnp[0], extnp[1], extnp[2])
-            # sliceNode.SetSliceOffsetValue(extnp[0], extnp[1], extnp[2])
 
             planeModeler = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLDynamicModelerNode")
             planeModeler.SetToolName("Plane cut")
@@ -1395,14 +1391,27 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
             planeModeler.SetNodeReferenceID("PlaneCut.InputPlane", sliceNode.GetID())
 
             # Output models"
-            antModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
-            planeModeler.SetNodeReferenceID("PlaneCut.OutputPositiveModel", antModel.GetID())
+            supModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+            infModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+
+            planeModeler.SetNodeReferenceID("PlaneCut.OutputNegativeModel", infModel.GetID())
+            planeModeler.SetNodeReferenceID("PlaneCut.OutputPositiveModel", supModel.GetID())
             slicer.modules.dynamicmodeler.logic().RunDynamicModelerTool(planeModeler)
 
             # TO DO: remove all intermediate nodes from scene
             slicer.mrmlScene.RemoveNode(planeModeler)
 
-            return antModel
+            # if plane is min, keep positive model, else keep negative model
+            # since 0 based modulo 2 is mins
+            outModel = slicer.vtkMRMLModelNode()
+            if bd % 2 == 0:
+                slicer.mrmlScene.RemoveNode(infModel)
+                outModel = supModel
+            else:
+                slicer.mrmlScene.RemoveNode(supModel)
+                outModel = infModel
+
+            return outModel
 
         return None
 
