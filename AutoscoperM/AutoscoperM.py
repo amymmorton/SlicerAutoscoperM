@@ -1411,7 +1411,7 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
             planeModeler.SetNodeReferenceID("PlaneCut.OutputPositiveModel", positive_model.GetID())
             slicer.modules.dynamicmodeler.logic().RunDynamicModelerTool(planeModeler)
 
-            # TO DO: remove all intermediate nodes from scene
+            # remove all intermediate nodes from scene
             slicer.mrmlScene.RemoveNode(planeModeler)
 
             # if plane is min, keep positive model, else keep negative model
