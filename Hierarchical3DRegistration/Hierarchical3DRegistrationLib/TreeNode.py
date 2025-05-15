@@ -148,8 +148,8 @@ class TreeNode:
 
         # remove the transform node, seg node and the cloned model node
         slicer.mrmlScene.RemoveNode(tfm_pc)  # remove the transform node
-        slicer.mrmlScene.RemoveNode(clonedNode)  # remove the cloned model node
-        slicer.mrmlScene.RemoveNode(segNode)  # remove the segmentation node
+        # slicer.mrmlScene.RemoveNode(clonedNode)  # remove the cloned model node
+        # slicer.mrmlScene.RemoveNode(segNode)  # remove the segmentation node
 
         return modelROI
 

@@ -1328,7 +1328,7 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
         roiNode.GetRASBounds(roi_transformed_bounds)
 
         volume_bounds = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        volumeNode.GetBounds(volume_bounds)
+        volumeNode.GetRASBounds(volume_bounds)
 
         # to find intersection of bbs, take the max of the mins and the min of the maxs
         import numpy as np
@@ -1364,21 +1364,34 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
                 raise ValueError("Invalid transformation chosen, ROI and target volume node do not overlap!")
 
             ylim = 1
-            zlim = 3
+            zlim = 4
+
+            # may need to account for R and A  flip  L and P
+            ijkras = vtk.vtkMatrix4x4()
+            volumeNode.GetIJKToRASDirectionMatrix(ijkras)
+
+            flip = False
 
             # construct plane @bb_bounds(where false), in normal of dimension greatest issue
             bd = np.argmax(np.abs(np.abs(bb_bounds) - abs(np.array(roi_transformed_bounds))))
             extent_t = bb_bounds[bd]
             if bd > ylim:
                 if bd < zlim:
+                    # Anterior Posterior
                     normplane = [0, 1, 0]
                     plCut = "Green"
+                    # if ijkras.GetElement(1, 1) > 0:
+                    #    flip = True
                 else:
+                    # Superior Inferior
                     normplane = [0, 0, 1]
                     plCut = "Red"
             else:
+                # Right Left
                 normplane = [1, 0, 0]
                 plCut = "Yellow"
+                if ijkras.GetElement(0, 0) > 0:
+                    flip = True
 
             extnp = np.array(normplane) * extent_t
             lm = slicer.app.layoutManager()
@@ -1391,11 +1404,11 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
             planeModeler.SetNodeReferenceID("PlaneCut.InputPlane", sliceNode.GetID())
 
             # Output models"
-            supModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
-            infModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+            positive_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+            negative_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
 
-            planeModeler.SetNodeReferenceID("PlaneCut.OutputNegativeModel", infModel.GetID())
-            planeModeler.SetNodeReferenceID("PlaneCut.OutputPositiveModel", supModel.GetID())
+            planeModeler.SetNodeReferenceID("PlaneCut.OutputNegativeModel", negative_model.GetID())
+            planeModeler.SetNodeReferenceID("PlaneCut.OutputPositiveModel", positive_model.GetID())
             slicer.modules.dynamicmodeler.logic().RunDynamicModelerTool(planeModeler)
 
             # TO DO: remove all intermediate nodes from scene
@@ -1403,13 +1416,23 @@ class AutoscoperMLogic(ScriptedLoadableModuleLogic):
 
             # if plane is min, keep positive model, else keep negative model
             # since 0 based modulo 2 is mins
+
+            # however- these min max bounds are in RAS -
             outModel = slicer.vtkMRMLModelNode()
-            if bd % 2 == 0:
-                slicer.mrmlScene.RemoveNode(infModel)
-                outModel = supModel
-            else:
-                slicer.mrmlScene.RemoveNode(supModel)
-                outModel = infModel
+
+            if bd % 2 == 0 and not flip:
+                slicer.mrmlScene.RemoveNode(negative_model)
+                outModel = positive_model
+            elif bd % 2 == 1 and not flip:
+                slicer.mrmlScene.RemoveNode(positive_model)
+                outModel = negative_model
+
+            if bd % 2 == 0 and flip:
+                slicer.mrmlScene.RemoveNode(positive_model)
+                outModel = negative_model
+            elif bd % 2 == 1 and flip:
+                slicer.mrmlScene.RemoveNode(negative_model)
+                outModel = positive_model
 
             return outModel
 
