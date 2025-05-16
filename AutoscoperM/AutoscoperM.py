@@ -1,5 +1,6 @@
 import contextlib
 import glob
+import itertools
 import logging
 import os
 import shutil
@@ -112,6 +113,8 @@ def registerAutoscoperSampleData(dataType, version, checksum):
         # This node name will be used when the data set is loaded
         # nodeNames=f"AutoscoperM - {dataType} BVR" # comment this line so the data is not loaded into the scene
         customDownloader=downloadAndExtract,
+        # File format name(s) (if not specified then the default file reader will be used).
+        loadFileTypes="ZipFile",
     )
 
 
@@ -120,7 +123,7 @@ def sampleDataConfigFile(dataType):
     return {
         "2025-02-19-Wrist": "Wrist_Sample_Data.cfg",
         "2025-02-10-Knee": "Knee_Sample_Data.cfg",
-        "2025-01-12-Ankle": "2023-07-20-Ankle.cfg",
+        "2025-01-12-Ankle": "2025-01-12-Ankle.cfg",
     }.get(dataType)
 
 
@@ -197,12 +200,13 @@ class AutoscoperMWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.loadConfig.connect("clicked(bool)", self.onLoadConfig)
 
         # Lookup Autoscoper executables
-        for backend in ["CUDA", "OpenCL"]:
-            executableName = AutoscoperMWidget.autoscoperExecutableName(backend)
+        for backend, feature in itertools.product(["CUDA", "OpenCL"], ["", "-CollisionDetection"]):
+            executableSuffix = f"{backend}{feature}"
+            executableName = AutoscoperMWidget.autoscoperExecutableName(executableSuffix)
             logging.info(f"Looking up '{executableName}' executable")
             path = shutil.which(executableName)
             if path:
-                self.autoscoperExecutables[backend] = path
+                self.autoscoperExecutables[executableSuffix] = path
                 logging.info(f"Found '{path}'")
             else:
                 logging.info("No executable found")
@@ -210,7 +214,7 @@ class AutoscoperMWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if not self.autoscoperExecutables:
             logging.error("Failed to lookup autoscoper executables")
 
-        # Available Autoscoper backends
+        # Available Autoscoper backends formatted as "<backend>[-<feature>]"
         self.ui.autoscoperRenderingBackendComboBox.addItems(list(self.autoscoperExecutables.keys()))
 
         # Sample Data Buttons
@@ -354,11 +358,11 @@ class AutoscoperMWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._parameterNode.EndModify(wasModified)
 
     @property
-    def autoscoperExecutableToLaunchBackend(self):
+    def autoscoperExecutableToLaunch(self):
         return self.ui.autoscoperRenderingBackendComboBox.currentText
 
-    @autoscoperExecutableToLaunchBackend.setter
-    def autoscoperExecutableToLaunchBackend(self, value):
+    @autoscoperExecutableToLaunch.setter
+    def autoscoperExecutableToLaunch(self, value):
         self.ui.autoscoperRenderingBackendComboBox.currentText = value
 
     @staticmethod
@@ -373,7 +377,7 @@ class AutoscoperMWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         This call waits that the process has been started and returns.
         """
         try:
-            executablePath = self.autoscoperExecutables[self.autoscoperExecutableToLaunchBackend]
+            executablePath = self.autoscoperExecutables[self.autoscoperExecutableToLaunch]
         except KeyError:
             logging.error("Autoscoper executable not found")
             return
