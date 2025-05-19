@@ -43,6 +43,7 @@ endif()
 add_subdirectory(AutoscoperM)
 add_subdirectory(TrackingEvaluation)
 add_subdirectory(Hierarchical3DRegistration)
+add_subdirectory(BVRTrackingVisual)
 ## NEXT_MODULE
 
 #-----------------------------------------------------------------------------
