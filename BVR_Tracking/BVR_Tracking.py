@@ -1,21 +1,21 @@
-import logging
 import os
-from typing import Annotated, Optional
+from typing import Optional
 
-import vtk
-
+import numpy as np
 import slicer
+import vtk
+from slicer import vtkMRMLModelNode, vtkMRMLSequenceNode
 from slicer.i18n import tr as _
-from slicer.i18n import translate
-from slicer.ScriptedLoadableModule import *
-from slicer.util import VTKObservationMixin
 from slicer.parameterNodeWrapper import (
     parameterNodeWrapper,
-    WithinRange,
 )
-
-from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLSequenceNode
-
+from slicer.ScriptedLoadableModule import (
+    ScriptedLoadableModule,
+    ScriptedLoadableModuleLogic,
+    ScriptedLoadableModuleTest,
+    ScriptedLoadableModuleWidget,
+)
+from slicer.util import VTKObservationMixin
 
 #
 # BVR_Tracking
@@ -31,23 +31,28 @@ class BVR_Tracking(ScriptedLoadableModule):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = _("BVR_Tracking")  # TODO: make this more human readable by adding spaces
         # TODO: set categories (folders where the module shows up in the module selector)
-        self.parent.categories = [ "Tracking"]
+        self.parent.categories = ["Tracking"]
         self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-        self.parent.contributors = ["Amy Morton "]  
+        self.parent.contributors = ["Amy Morton "]
         # TODO: update with short description of the module and a link to online module documentation
         # _() function marks text as translatable to other languages
-        self.parent.helpText = _("""
+        self.parent.helpText = _(
+            """
 This is an example of scripted loadable module bundled in an extension.
 See more information in <a href="https://github.com/organization/projectname#BVR_Tracking">module documentation</a>.
-""")
+"""
+        )
         # TODO: replace with organization, grant and thanks
-        self.parent.acknowledgementText = _("""
+        self.parent.acknowledgementText = _(
+            """
 This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc., Andras Lasso, PerkLab,
 and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
-""")
+"""
+        )
 
         # Additional initialization step after application startup is complete
-       # slicer.app.connect("startupCompleted()", registerSampleData)
+
+    # slicer.app.connect("startupCompleted()", registerSampleData)
 
 
 #
@@ -63,9 +68,6 @@ def registerSampleData():
     import SampleData
 
     iconsPath = os.path.join(os.path.dirname(__file__), "Resources/Icons")
-
-    # To ensure that the source code repository remains small (can be downloaded and installed quickly)
-    # it is recommended to store data sets that are larger than a few MB in a Github release.
 
     # BVR_Tracking1
     SampleData.SampleDataLogic.registerCustomSampleDataSource(
@@ -166,11 +168,10 @@ class BVR_TrackingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         # Buttons
-        #Load
+        # Load
         self.ui.loadModels_pb.connect("clicked(bool)", self.onloadModels_pb)
         self.ui.loadTras_pb.connect("clicked(bool)", self.onloadTras_pb)
-        #Apply transforms
-        self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
+        # Apply transforms
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -210,7 +211,7 @@ class BVR_TrackingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self.setParameterNode(self.logic.getParameterNode())
 
-        #Select default input nodes if nothing is selected yet to save a few clicks for the user
+        # Select default input nodes if nothing is selected yet to save a few clicks for the user
         if not self._parameterNode.selectedModel:
             firstModelNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLModelNode")
             if firstModelNode:
@@ -220,7 +221,6 @@ class BVR_TrackingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             firstSeqNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLSequenceNode")
             if firstSeqNode:
                 self._parameterNode.selectedTraSeq = firstSeqNode
-        
 
     def setParameterNode(self, inputParameterNode: Optional[BVR_TrackingParameterNode]) -> None:
         """
@@ -241,11 +241,11 @@ class BVR_TrackingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def _checkCanApply(self, caller=None, event=None) -> None:
         if self._parameterNode and self._parameterNode.selectedModel and self._parameterNode.selectedTraSeq:
-            self.ui.applyButton.toolTip = _("Assign tra to model")
-            self.ui.applyButton.enabled = True
+            self.ui.loadTras_pb.toolTip = _("Assign tra to model")
+            self.ui.loadTras_pb.enabled = True
         else:
-            self.ui.applyButton.toolTip = _("Load/Select model and tra files ")
-            self.ui.applyButton.enabled = False
+            self.ui.loadTras_pb.toolTip = _("Load/Select model and tra files ")
+            self.ui.loadTras_pb.enabled = False
 
     def onloadModels_pb(self) -> None:
         """Run processing when user clicks "Apply" button."""
@@ -255,18 +255,12 @@ class BVR_TrackingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.inputModelSelector.setCurrentNode(slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLModelNode"))
 
     def onloadTras_pb(self) -> None:
-        """Run processing when user clicks "Apply" button."""
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
-            slicer.util.openAddDataDialog()
+        traFileDirectory = (
+            self.ui.trackingFileSelector.currentPath if self.ui.trackingFileSelector.currentPath else None
+        )
+        model = self.ui.inputModelSelector.currentNode() if self.ui.inputModelSelector.currentNode() else None
+        self.logic.loadTras(traFileDirectory, model)
 
-    def onApplyButton(self) -> None:
-        """Run processing when user clicks "Apply" button."""
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
-            self.logic.assignTra2Model(self.ui.inputModelSelector.currentNode(), self.ui.transformSeqSelector.currentNode())
-
-            
 
 #
 # BVR_TrackingLogic
@@ -290,37 +284,85 @@ class BVR_TrackingLogic(ScriptedLoadableModuleLogic):
     def getParameterNode(self):
         return BVR_TrackingParameterNode(super().getParameterNode())
 
-    
-
-        
-    
-    def loadTras(self,
-                ) -> list:
+    def loadTras(
+        self,
+        traFile,
+        model,
+    ) -> None:
         """
         Run the processing algorithm.
         Can be used without GUI widget.
-        :param selectedModel: current model to apply tra seq transforms to
-        :param selectedTraSeq: current sequence of transforms to apply to the model
+        :param traFile: this tra file to be loaded as Seq
         """
-        traSeqList = []
-        # Load transforms from file
-        return traSeqList
+        # new sequence browser if one does not exist
+        seqBrowser = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLSequenceBrowserNode")
+        if not seqBrowser:
+            seqBrowser = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSequenceBrowserNode", "Tracking_Browser")
 
-    def assignTra2Model(self,
-                selectedModel: vtkMRMLModelNode,
-                selectedTraSeq: vtkMRMLSequenceNode
-                ) -> None:
+        tName = os.path.splitext(os.path.basename(traFile))[0]
+        tra = np.loadtxt(traFile, delimiter=",")
+        tra.resize(tra.shape[0], 4, 4)
+
+        tf = self.initializeTransforms(tra, tName, seqBrowser)
+        # print(seqNode.GetNumberOfDataNodes())
+
+        model.SetAndObserveTransformNodeID(tf.GetID())
+
+    def initializeTransforms(self, tform4x4, tName, seqBrowser) -> slicer.vtkMRMLLinearTransformNode:
+        """Creates a new transform sequence in the scene browser ."""
+
+        newSequenceNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSequenceNode", f"{tName}_transform_sequence")
+        seqBrowser.AddSynchronizedSequenceNode(newSequenceNode)
+
+        identityTfm = slicer.mrmlScene.CreateNodeByClass("vtkMRMLLinearTransformNode")
+        identityTfm.UnRegister(None)  # release extra reference of object to avoid memory leak message
+
+        # batch the processing event for the addition of the new transform nodes, for speedup
+        slicer.mrmlScene.StartState(slicer.vtkMRMLScene.BatchProcessState)
+
+        for i in range(tform4x4.shape[0]):
+            tform_i = slicer.util.vtkMatrixFromArray(tform4x4[i, :, :])
+            identityTfm.SetMatrixTransformToParent(tform_i)
+            newSequenceNode.SetDataNodeAtValue(identityTfm, str(i))
+
+        slicer.mrmlScene.EndState(slicer.vtkMRMLScene.BatchProcessState)
+        slicer.app.processEvents()
+        return identityTfm
+
+    def loadTraAsVTK(data: np.ndarray) -> list[vtk.vtkMatrix4x4]:
         """
-        Run the processing algorithm.
-        Can be used without GUI widget.
-        :param selectedModel: current model to apply tra seq transforms to
-        :param selectedTraSeq: current sequence of transforms to apply to the model
+        Converts the tracking data to a list of vtkMatrix4x4.
+
+        :param data: The tracking data.
+
+        :return: The tracking data as a sequence.
         """
+        _, cols = data.shape
 
-        if not selectedModel or not selectedTraSeq:
-            raise ValueError("Model or tra Seq is invalid")
+        EXPECTED_DIMENSION = 16
+        if cols != EXPECTED_DIMENSION:
+            # Check to see if the data was exported as a 4x4 matrix, probably want to expand this method
+            # to support other formats.
+            slicer.util.errorDisplay("Loading as sequence currently only supports 4x4 matrices")
+            return None
 
-       
+        result = []
+        for idx, row in enumerate(data):
+            matrix = vtk.vtkMatrix4x4()
+            # If there is no data, set the matrix to the previous matrix.
+            # If its the first matrix, set it to the identity matrix.
+            if np.isnan(row).any():
+                if idx == 0:
+                    matrix.Identity()
+                else:
+                    matrix.DeepCopy(result[idx - 1])
+            else:
+                for i in range(4):
+                    for j in range(4):
+                        matrix.SetElement(i, j, row[i * 4 + j])
+            result.append(matrix)
+        return result
+
 
 #
 # BVR_TrackingTest
