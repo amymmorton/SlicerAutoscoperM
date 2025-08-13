@@ -239,6 +239,7 @@ class TreeNode:
         vtk.vtkMatrix4x4.Multiply4x4(current_tfm_matrix, inverse_tfm_before_adjustment_matrix, tfm_manual)
 
         # reset the helper variable with the identity for next time
+        #include event handling- to allow an import , go from there?
         identity_matrix = vtk.vtkMatrix4x4()
         self.currTransformBeforeAdjustment.SetMatrixTransformToParent(identity_matrix)
 

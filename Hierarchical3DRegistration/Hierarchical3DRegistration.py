@@ -84,7 +84,7 @@ class Hierarchical3DRegistrationParameterNode:
     totalBones: The total number of bones to track in each frame, saved for progress bar
     currentFrameIdx: The current target frame being registered
     currentBoneID: The current bone in the frame being registered
-    runSatus: The current state of the registration module
+    runStatus: The current state of the registration module
     statusMsg: The message displayed to the user indicating the current workflow step
     """
 
@@ -101,7 +101,7 @@ class Hierarchical3DRegistrationParameterNode:
     totalBones: int
     currentFrameIdx: int
     currentBoneID: int  # TODO: use this to reconstruct TreeNode obj from scene?
-    runSatus: Hierarchical3DRegistrationRunStatus
+    runStatus: Hierarchical3DRegistrationRunStatus
     statusMsg: str
 
 
@@ -222,7 +222,7 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
         self._parameterNode.currentFrameIdx = -1
         self._parameterNode.currentBoneID = -1
         self._parameterNode.totalBones = 0
-        self._parameterNode.runSatus = Hierarchical3DRegistrationRunStatus.NOT_RUNNING
+        self._parameterNode.runStatus = Hierarchical3DRegistrationRunStatus.NOT_RUNNING
 
         if not self._parameterNode.volumeSequence:
             firstSequenceNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLSequenceNode")
@@ -252,7 +252,7 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
     def updateRegistrationButtonsState(self, _caller=None, _event=None):
         """Set the button text and whether the buttons are enabled."""
         # update the abort and initialize buttons
-        if self._parameterNode.runSatus == Hierarchical3DRegistrationRunStatus.NOT_RUNNING:
+        if self._parameterNode.runStatus == Hierarchical3DRegistrationRunStatus.NOT_RUNNING:
             self.ui.abortButton.enabled = False
             self.ui.initializeButton.enabled = True
             self.updateProgressBar(0)
@@ -278,12 +278,12 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
     def onInitializeButton(self):
         """Initializes a new registration process from the UI configuration parameters"""
         with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
-            if self._parameterNode.runSatus != Hierarchical3DRegistrationRunStatus.NOT_RUNNING:
+            if self._parameterNode.runStatus != Hierarchical3DRegistrationRunStatus.NOT_RUNNING:
                 raise ValueError("Cannot initialize registration process, as one is already ongoing!")
 
         with self.tryWithErrorDisplayAndCleanup("Failed to compute results.", waitCursor=True):
             self._parameterNode.statusMsg = "Initializing registration process..."
-            self._parameterNode.runSatus = Hierarchical3DRegistrationRunStatus.INITIALIZING
+            self._parameterNode.runStatus = Hierarchical3DRegistrationRunStatus.INITIALIZING
             self.updateRegistrationButtonsState()
 
             # TODO: Remove this once this is working with the parameterNodeWrapper
@@ -311,9 +311,11 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
             self._parameterNode.totalBones = nodeCount
 
             # initialize the registration status variables
+            if self._parameterNode.startFrameIdx < 0:
+                self._parameterNode.startFrameIdx = 0
             self._parameterNode.currentFrameIdx = self._parameterNode.startFrameIdx
             self.bonesToTrack = [self.rootBone]
-            self._parameterNode.runSatus = Hierarchical3DRegistrationRunStatus.IN_PROGRESS
+            self._parameterNode.runStatus = Hierarchical3DRegistrationRunStatus.IN_PROGRESS
             self.updateRegistrationButtonsState()
 
             # prepare for the next step in the workflow
@@ -326,9 +328,9 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
             slicer.util.setSliceViewerLayers(background=nextFrame, fit=True)
 
             if self._parameterNode.skipManualTfmAdjustments:
-                self.ui.registerButton.enabled = False
+                #self.ui.registerButton.enabled = False
                 slicer.app.processEvents()
-                self.doNextRegistrationStep()
+                #self.doNextRegistrationStep()
             else:
                 nextBone = self.bonesToTrack[0]
                 nextBone.startInteraction(self._parameterNode.currentFrameIdx)
@@ -347,7 +349,7 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
             #  Slice issue: https://github.com/Slicer/Slicer/issues/7905
             if not currentRootIDStatus:
                 raise ValueError("Invalid hierarchy object selected!")
-            if self._parameterNode.runSatus == Hierarchical3DRegistrationRunStatus.CANCELING:
+            if self._parameterNode.runStatus == Hierarchical3DRegistrationRunStatus.CANCELING:
                 raise ValueError("Canceling registration...")
             self.ui.registerButton.enabled = False
             slicer.app.processEvents()
@@ -359,13 +361,19 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
     def doNextRegistrationStep(self):
         """Sets up and performs the registration step for the next bone in frame"""
+        Done = False
         # get bone and target frame for the current step
         targetFrameIdx = self._parameterNode.currentFrameIdx
         self.currentBone = self.bonesToTrack.pop(0)
 
         # update UI to prepare for automated registration
-        manual_tfm = self.currentBone.stopInteraction(targetFrameIdx)
+        if not self._parameterNode.skipManualTfmAdjustments:
+            manual_tfm = self.currentBone.stopInteraction(targetFrameIdx)
+        else:
+            manual_tfm = vtk.vtkMatrix4x4()
+
         slicer.util.forceRenderAllViews()
+        # TO DO: find the command that fits the 3d view to items
         self._parameterNode.statusMsg = f"Registering bone '{self.currentBone.name}' in frame {targetFrameIdx}"
 
         # crop the target frame based on the source ROI and initial guess transform
@@ -376,6 +384,10 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
         self.logic.registerBoneInFrame(self.currentBone, targetFrameIdx, manual_tfm, self._parameterNode.trackOnlyRoot)
 
         # If there is a next frame to register, copy the result transform as the next initial guess
+        if self._parameterNode.endFrameIdx < 0:
+            #default to end frame of sequence
+            self._parameterNode.endFrameIdx = self._parameterNode.volumeSequence.GetNumberOfDataNodes() - 1
+
         if targetFrameIdx != self._parameterNode.endFrameIdx:
             self.currentBone.copyTransformToNextFrame(targetFrameIdx)
 
@@ -397,7 +409,8 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
                 )
                 browserNode.SetSelectedItemNumber(self._parameterNode.endFrameIdx)
                 self.updateProgressBar(100)
-                return slicer.util.messageBox("Success! Registration Complete.")
+                self._parameterNode.statusMsg = f"Success! Registration Complete."
+                return
 
             # we just finished registering all the bones in the current
             # frame, so now we can move on to the next frame
@@ -406,6 +419,9 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
             # error, since the progress bar saves value as int
             total_frames_done = self._parameterNode.currentFrameIdx - self._parameterNode.startFrameIdx
             self.updateProgressBar(total_frames_done / totalFrames * 100)
+
+            if total_frames_done / totalFrames * 100 == 100:
+                Done = True
 
             self.rootBone.setModelsVisibility(False)
             nextFrame = AutoscoperMLogic.getItemInSequence(
@@ -418,10 +434,12 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
             slicer.app.processEvents()
             self.bonesToTrack = [self.rootBone]
 
-        if self._parameterNode.skipManualTfmAdjustments:
+
+        #good check - but also need to catch if the regsitration sequence (start frame end frame , all bones completer)
+        if self._parameterNode.skipManualTfmAdjustments and not Done:
             # if user doesn't need to adjust anything, continue to next step right away
             return self.doNextRegistrationStep()
-
+        
         # prepare for user interaction of transform adjustments for the next bone
         nextBone = self.bonesToTrack[0]
         nextFrameIdx = self._parameterNode.currentFrameIdx
@@ -439,7 +457,7 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
     def onAbortButton(self):
         """Stop ongoing registration process and restores all module parameters to default
         Intermediate artifacts and partial output will not be deleted from the scene."""
-        self._parameterNode.runSatus = Hierarchical3DRegistrationRunStatus.CANCELING
+        self._parameterNode.runStatus = Hierarchical3DRegistrationRunStatus.CANCELING
         self._parameterNode.statusMsg = "Initializing registration process..."
         self.updateRegistrationButtonsState()
         self.cleanupRegistrationProcess()
@@ -463,10 +481,10 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
         # update UI to reflect process no longer in progress
         self._parameterNode.statusMsg = ""
-        self._parameterNode.runSatus = Hierarchical3DRegistrationRunStatus.NOT_RUNNING
+        self._parameterNode.runStatus = Hierarchical3DRegistrationRunStatus.NOT_RUNNING
         self.updateRegistrationButtonsState()
 
-    def onImportButton(self):
+    def onImportButton(self, treeE: Optional[TreeNode] = None):
         """UI button for reading the TRA files into sequences."""
         # TODO: this currently works as a mean to load previous results to the scene,
         # but we should improve the workflow for importing and then registering with the same
@@ -491,6 +509,9 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
                 if self._parameterNode.sourceVolume.GetID() == self._parameterNode.volumeSequence.GetID():
                     raise ValueError("The source volume must not be the same as the input sequence selected!")
 
+            if treeE is None:
+                #self.rootBone = treeE
+            
                 self.rootBone = TreeNode(
                     hierarchyID=self._parameterNode.hierarchyRootID,
                     ctSequence=self._parameterNode.volumeSequence,
@@ -515,7 +536,9 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
 
             self.rootBone.setModelsVisibility(True)
 
-        slicer.util.messageBox("Success!")
+        #slicer.util.messageBox("Success!")
+        self._parameterNode.statusMsg = f"Transforms imported successfully."
+
 
     def onExportButton(self):
         """UI button for writing the sequences as TRA files."""
@@ -532,7 +555,8 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
                 node.exportTransformsAsTRAFile(exportDir)
                 node_list.extend(node.childNodes)
 
-        slicer.util.messageBox("Success!")
+        #slicer.util.messageBox("Success!")
+        self._parameterNode.statusMsg = f"Transforms exported successfully."
 
     def updateFrameSlider(self, CTSelectorNode: slicer.vtkMRMLNode):
         """Update the slider and spin boxes when a new sequence is selected."""
