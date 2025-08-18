@@ -2,30 +2,14 @@ import os
 import glob
 import time
 
+import numpy as np
+
 import slicer
 import DICOMLib
 from DICOMLib import DICOMUtils
 from DICOM import DICOMWidget #slicer.util.selectModule("DICOM")
 
 from Hierarchical3DRegistration import Hierarchical3DRegistrationLogic
-
-def run_3dh_registration(model_folder, m_hier_inorder, source_vol_n, seq_n, tform_fold):
-    """
-    Run the 3DH registration process.
-    
-    Parameters:
-    model_folder (str): Path to the folder containing the models.
-    source_vol_n (str): Path to the source volume file.
-    seq_n (str): Path to the sequence file.
-    tform_fold (str): Path to the folder where transforms will be saved.
-    m_hier_inorder (list): List of model names in hierarchical order.
-
-    output:
-    - Transforms_3DH .tra
-    """
-
-    
-
 
 
 # Run the registration
@@ -45,6 +29,7 @@ def run_3dh_registration(model_folder, m_hier_inorder, source_vol_n, seq_n, tfor
     output:
     - Transforms_3DH .tra
     """
+        
     slicer.mrmlScene.Clear(0)
 
     m_3dh = slicer.modules.hierarchical3dregistration
@@ -101,20 +86,33 @@ def run_3dh_registration(model_folder, m_hier_inorder, source_vol_n, seq_n, tfor
     #set the current and end frames- they show in the ui- but are not being 
     #set in to the parameter node
 
+    #one of the issues with this logic.. is that the imported tra gets overridden.. so- maybe force the control
+    #here, to only register a single frame- and export - not ovwerwriting the next sequence frame transfroms?
+
+    final_frame = mWidget.logic.getParameterNode().volumeSequence.GetNumberOfDataNodes()
+
     mWidget.logic.getParameterNode().startFrameIdx = 1
-    mWidget.logic.getParameterNode().endFrameIdx = mWidget.logic.getParameterNode().volumeSequence.GetNumberOfDataNodes() - 1
+
     mWidget.onInitializeButton()
-
     mWidget.onImportButton(mWidget.rootBone)
-    mWidget.doNextRegistrationStep()
+
+    #numpy array of frames
+    frS = np.arange(1, final_frame -1)
+
+    for fr in frS:
+        mWidget.bonesToTrack = [mWidget.rootBone]  # Reset the bones to track for each frame
+        mWidget.logic.getParameterNode().startFrameIdx = fr.item()
+        mWidget.logic.getParameterNode().endFrameIdx = fr.item()
+
+        mWidget.doNextRegistrationStep()
 
 
-    #cha'nge for export
+    #change for export
     mWidget.ui.ioDir.setCurrentPath(tform_ot)
 
     mWidget.onExportButton()
 
-
+    
 
 """
 For debugging in Slicer, use the following to manipulate the module objects:
@@ -135,21 +133,27 @@ for i in folder_names:
     if 'BN' in i:
         folders.append(i)
 
-#for folder in folders:
-folder = folders[0]
-#subj name is folder.split('\\')[-1]
-subj_name = folder.split('\\')[-1]
-#seqence, source vol, hierarchy, transforms folder & tra
-model_folder = os.path.join(folder, 'Models')
-mnames = ['rad.stl','tpm.stl','mc1.stl']
-source_vol_n = os.path.join(folder, 'Scene','1 neutral.nrrd')
-seq_n = os.path.join(folder, 'Scene','3DH',subj_name +'.seq.mrb')
 
-tform_fold= os.path.join(folder, 'Scene','3DH','Transforms')
-tform_ot = os.path.join(folder,'Tracking','OBB')
-#create if not exist
-if not os.path.exists(tform_ot):
-    os.makedirs(tform_ot)
+for folder in folders:
+    #folder = folders[0]
+    #subj name is folder.split('\\')[-1]
+    subj_name = folder.split('\\')[-1]
+    #seqence, source vol, hierarchy, transforms folder & tra
+    model_folder = glob.glob(os.path.join(folder, 'Models'))
+    mnames = ['rad.stl','tpm.stl','mc1.stl']
+    source_vol_n = os.path.join(folder, 'Scene','1 neutral.nrrd')
+    seq_n = os.path.join(folder, 'Scene','3DH',subj_name +'.seq.mrb')
 
-# Run the registration
-run_3dh_registration(model_folder, m_hier_inorder, source_vol_n, seq_n, tform_fold, tform_ot)
+    tform_fold= os.path.join(folder, 'Scene','3DH','Transforms')
+    tform_ot = os.path.join(folder,'Tracking','OBB')
+    #create if not exist
+    if not os.path.exists(tform_ot):
+        os.makedirs(tform_ot)
+
+
+    print(model_folder)
+
+
+    # Run the registration
+    run_3dh_registration(model_folder, m_hier_inorder, source_vol_n, seq_n, tform_fold, tform_ot)
+

@@ -423,16 +423,17 @@ class Hierarchical3DRegistrationWidget(ScriptedLoadableModuleWidget, VTKObservat
             if total_frames_done / totalFrames * 100 == 100:
                 Done = True
 
-            self.rootBone.setModelsVisibility(False)
-            nextFrame = AutoscoperMLogic.getItemInSequence(
-                self._parameterNode.volumeSequence, self._parameterNode.currentFrameIdx
-            )[0]
-            volumeRenderingLogic = slicer.modules.volumerendering.logic()
-            nextFrameDisplayNode = volumeRenderingLogic.CreateDefaultVolumeRenderingNodes(nextFrame)
-            nextFrameDisplayNode.SetVisibility(1)
-            slicer.util.setSliceViewerLayers(background=nextFrame, fit=True)
-            slicer.app.processEvents()
-            self.bonesToTrack = [self.rootBone]
+            if not Done:
+                self.rootBone.setModelsVisibility(False)
+                nextFrame = AutoscoperMLogic.getItemInSequence(
+                    self._parameterNode.volumeSequence, self._parameterNode.currentFrameIdx
+                )[0]
+                volumeRenderingLogic = slicer.modules.volumerendering.logic()
+                nextFrameDisplayNode = volumeRenderingLogic.CreateDefaultVolumeRenderingNodes(nextFrame)
+                nextFrameDisplayNode.SetVisibility(1)
+                slicer.util.setSliceViewerLayers(background=nextFrame, fit=True)
+                slicer.app.processEvents()
+                self.bonesToTrack = [self.rootBone]
 
 
         #good check - but also need to catch if the regsitration sequence (start frame end frame , all bones completer)
